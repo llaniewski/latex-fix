@@ -62,27 +62,31 @@ s/(table|Tab\.|tab\.)~(\\)/Table~\2/g # Correcting capital letter on Table
 EOF
 
 	echo -n >$TMP.defs.tex
-	while read -r line; do
-		COM=$(echo "$line" | sed -nE 's/^\\def(\\[[:alpha:].]*).*$/\1/p')
-		test -z "$COM" && continue
-		COM=$(echo "$line" | sed -nE 's/^\\def(\\[[:alpha:].]*).*$/\1/p')
-		if ! grep -E '(\\def|\\newcommand)({|)\'$COM $TMP.tex >/dev/null
-		then
-			echo "fix: Adding definition for $COM"
-			echo "$line" >>$TMP.defs.tex
-		fi
-	done <<'EOF'
+	if grep '\\begin{document}' $TMP.tex >/dev/null
+	then
+		while read -r line; do
+			COM=$(echo "$line" | sed -nE 's/^\\def(\\[[:alpha:].]*).*$/\1/p')
+			test -z "$COM" && continue
+			COM=$(echo "$line" | sed -nE 's/^\\def(\\[[:alpha:].]*).*$/\1/p')
+			if ! grep -E '(\\def|\\newcommand)({|)\'$COM $TMP.tex >/dev/null
+			then
+				echo "fix: Adding definition for $COM"
+				echo "$line" >>$TMP.defs.tex
+			fi
+		done <<'EOF'
 \def\etal.{et\penalty50\ al.}
 \def\eg.{e.g.,}
 EOF
 
-	(
-		sed -e '/\\begin{document}/,$ d' $TMP.tex
-		cat $TMP.defs.tex
-		sed -ne '/\\begin{document}/,$ p' $TMP.tex
-	) >$TMP.1.tex
-	mv $TMP.1.tex $TMP.tex
-
+		(
+			sed -e '/\\begin{document}/,$ d' $TMP.tex
+			cat $TMP.defs.tex
+			sed -ne '/\\begin{document}/,$ p' $TMP.tex
+		) >$TMP.1.tex
+		mv $TMP.1.tex $TMP.tex
+	else
+		echo "warning: no begin{document} so I'm not adding any definitions"
+	fi
 
 	echo -n >$TMP.acr.tex
 	grep "\\newacronym" $TMP.tex | while read -r line; do
