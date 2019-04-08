@@ -11,5 +11,12 @@ git clone https://github.com/llaniewski/latex-fix.git autofix
 
 ## Usage:
 ```bash
-autofix/autofix [somefile.tex]
+autofix/autofix somefile.tex
 ```
+
+If you use a separate file for acronyms (`\newacronym`) then you can provide this file as the second argument:
+```bash
+autofix/autofix somefile.tex glossary.tex
+```
+
+

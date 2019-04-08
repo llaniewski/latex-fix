@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function usage {
-	echo "autofix [filename]"
+	echo "autofix filename.tex [glossary.tex]"
 }
 
 if test "x$1" == "xspace"
@@ -17,8 +17,9 @@ if test -z "$MAIN"
 then
 	usage
 	exit 1
+else
+	shift
 fi
-shift
 
 MAIN=$(echo "$MAIN" | sed 's/\.tex$//')
 
@@ -27,6 +28,15 @@ then
 	usage
 	exit 2
 fi
+
+GLOSS=$1
+if test -z "$GLOSS"
+then
+	GLOSS=$MAIN
+else
+	shift
+fi
+
 
 TMP=tmp000
 
@@ -116,7 +126,7 @@ EOF
 	fi
 
 	echo -n >$TMP.acr.tex
-	grep "\\newacronym" $TMP.tex | while read -r line; do
+	grep "\\newacronym" $GLOSS | while read -r line; do
 		COM=$(echo "$line" | sed -nE 's/^.*\\newacronym\{([^\}]*)\}.*/\1/p')
 		ACR=$(echo "$line" | sed -nE 's/^.*\\newacronym\{[^\}]*\}\{([^\}]*)\}.*/\1/p')
 		test -z "$COM" && continue
