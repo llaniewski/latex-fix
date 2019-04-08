@@ -1,0 +1,139 @@
+#!/bin/bash
+
+function usage {
+	echo "autofix [filename]"
+}
+
+MAIN=$1
+if test -z "$MAIN"
+then
+	usage
+	exit 1
+fi
+shift
+
+MAIN=$(echo "$MAIN" | sed 's/\.tex$//')
+
+if ! test -f "$MAIN.tex"
+then
+	usage
+	exit 2
+fi
+
+TMP=tmp000
+
+set -e
+
+cp $MAIN.tex $TMP.tex
+
+function applysed {
+	line="$1"
+	test -z "$line" && return 0
+	echo "$line" | grep '^#' >/dev/null && return 0
+	HA=$(echo "$line" | sed -E 's/^.* # //')
+	if sed -E "/^[[:space:]]*%/! $line" $TMP.tex >$TMP.1.tex
+	then
+		if ! diff $TMP.1.tex $TMP.tex >/dev/null
+		then
+			echo "fix: $HA"
+			mv $TMP.1.tex $TMP.tex
+		fi
+	else
+		echo "sed failed for: $line"
+		exit 1
+	fi
+}
+
+function applyfixes {
+
+	while read -r line
+	do
+		applysed "$line"
+	done <<'EOF'
+s/([[:space:]~(])e(|\.)(| )g(|\.)/\1\\eg./g # Change 'e.g.' to \eg.
+s/[[:space:]~]et(\.|\. | )al(\.|)/~\\etal./g # Change 'et al' to \etal.
+s/([[:space:]][[:alpha:]]*)(\.|,)([[:alpha:]][[:alpha:]]*)\b/\1\2 \3/g # Adding missing spaces after dot or comma
+s/((\.|,))[[:space:]]*$/\1/g # Deleting spaces at the end of line after dot or comma
+s/\.[[:space:]][[:space:]]*([[:upper:]])/\.\n\1/g # Making all sentences in new lines
+s/([[:alpha:]])[[:space:]]*([\\](ref|cite|fig))/\1~\2/g # Adding non-bracking spaced before references
+s/(figure|Fig\.|fig\.)~(\\)/Figure~\2/g # Correcting capital letter on Figure
+s/(table|Tab\.|tab\.)~(\\)/Table~\2/g # Correcting capital letter on Table
+#s/([[:space:]])-([[:space:]])/\1---\2/g # Making dash a long dash
+EOF
+
+	echo -n >$TMP.defs.tex
+	while read -r line; do
+		COM=$(echo "$line" | sed -nE 's/^\\def(\\[[:alpha:].]*).*$/\1/p')
+		test -z "$COM" && continue
+		COM=$(echo "$line" | sed -nE 's/^\\def(\\[[:alpha:].]*).*$/\1/p')
+		if ! grep -E '(\\def|\\newcommand)({|)\'$COM $TMP.tex >/dev/null
+		then
+			echo "fix: Adding definition for $COM"
+			echo "$line" >>$TMP.defs.tex
+		fi
+	done <<'EOF'
+\def\etal.{et\penalty50\ al.}
+\def\eg.{e.\penalty50\ g.,}
+EOF
+
+	(
+		sed -e '/\\begin{document}/,$ d' $TMP.tex
+		cat $TMP.defs.tex
+		sed -ne '/\\begin{document}/,$ p' $TMP.tex
+	) >$TMP.1.tex
+	mv $TMP.1.tex $TMP.tex
+
+
+	echo -n >$TMP.acr.tex
+	grep "\\newacronym" $TMP.tex | while read -r line; do
+		COM=$(echo "$line" | sed -nE 's/^.*\\newacronym\{([^\}]*)\}.*/\1/p')
+		ACR=$(echo "$line" | sed -nE 's/^.*\\newacronym\{[^\}]*\}\{([^\}]*)\}.*/\1/p')
+		test -z "$COM" && continue
+		echo $ACR >>$TMP.acr.tex
+		applysed 's/([[:space:]+])'$ACR'([^}])/\1\\gls{'$COM'}\2/g # fixing acronym '$ACR''
+		applysed 's/^'$ACR'([^}])/\\gls{'$COM'}\1/g # fixing acronym '$ACR''
+	done
+
+	ACRS=$(sed -e 's/\\gls{[^}]*}//g' -e '/\\newacronym/d' $TMP.tex |
+		grep -o '\b[[:upper:]][[:upper:]][[:upper:]]*\b' |
+		sort | uniq |
+		comm - <(sort $TMP.acr.tex) -23 |
+		paste -sd ',' -
+	)
+	if ! test -z "$ACRS"
+	then
+		echo "warning: Consider adding these acronyms: $ACRS"
+	fi
+}
+
+applyfixes | tee $TMP.msg
+
+if ! git diff --exit-code $MAIN.tex >/dev/null
+then
+	echo "WARNING: There are un-commited changes in $MAIN.tex"
+	COMMIT=false
+else
+	COMMIT=true
+fi
+
+if ! diff $TMP.tex $MAIN.tex >/dev/null
+then
+	meld $TMP.tex $MAIN.tex
+	if ! git diff --exit-code $MAIN.tex >/dev/null
+	then
+		echo "Some changes wrt to the git version ..."
+		if $COMMIT
+		then
+			read -r -n 1 -p "Commit (y/n)? " choice
+			echo
+			case "$choice" in
+			y|Y )
+				git add $MAIN.tex
+				git commit -eF $TMP.msg
+				;;
+			esac
+		fi
+	fi
+else
+	echo "Nothing was changed"
+fi
