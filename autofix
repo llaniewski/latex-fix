@@ -50,7 +50,7 @@ function applyfixes {
 	do
 		applysed "$line"
 	done <<'EOF'
-s/([[:space:]~(])e(|\.)(| )g(|\.)/\1\\eg./g # Change 'e.g.' to \eg.
+s/([[:space:]~(])e(|\.)(| )g(|\.)(|,|:)/\1\\eg./g # Change 'e.g.' to \eg.
 s/[[:space:]~]et(\.|\. | )al(\.|)/~\\etal./g # Change 'et al' to \etal.
 s/([[:space:]][[:alpha:]]*)(\.|,)([[:alpha:]][[:alpha:]]*)\b/\1\2 \3/g # Adding missing spaces after dot or comma
 s/((\.|,))[[:space:]]*$/\1/g # Deleting spaces at the end of line after dot or comma
