@@ -73,7 +73,7 @@ EOF
 		fi
 	done <<'EOF'
 \def\etal.{et\penalty50\ al.}
-\def\eg.{e.\penalty50\ g.,}
+\def\eg.{e.g.,}
 EOF
 
 	(
