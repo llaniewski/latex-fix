@@ -4,6 +4,14 @@ function usage {
 	echo "autofix [filename]"
 }
 
+if test "x$1" == "xspace"
+then
+	SPACE=true
+	shift
+else
+	SPACE=false
+fi
+
 MAIN=$1
 if test -z "$MAIN"
 then
@@ -23,6 +31,21 @@ fi
 TMP=tmp000
 
 set -e
+
+if ! git diff --exit-code $MAIN.tex >/dev/null
+then
+	echo "WARNING: There are un-commited changes in $MAIN.tex"
+	COMMIT=false
+else
+	COMMIT=true
+fi
+
+
+if $SPACE
+then
+	sed -E 's/((\.|,))[[:space:]]*$/\1/g' $MAIN.tex >$TMP.tex
+	mv $TMP.tex $MAIN.tex
+fi
 
 cp $MAIN.tex $TMP.tex
 
@@ -51,6 +74,8 @@ function applyfixes {
 		applysed "$line"
 	done <<'EOF'
 s/([[:space:]~(])e(|\.)(| )g(|\.)(|,|:)/\1\\eg./g # Change 'e.g.' to \eg.
+s/([[:space:]~(])i(|\.)(| )e(|\.)(|,|:)/\1\\ie./g # Change 'i.e.' to \ie.
+s/([[:space:]~(])w(|\.)(| )r(|\.)t(|\.)(|:)/\1\\wrt./g # Change 'w.r.t.' to \wrt.
 s/[[:space:]~]et(\.|\. | )al(\.|)/~\\etal./g # Change 'et al' to \etal.
 s/([[:space:]][[:alpha:]]*)(\.|,)([[:alpha:]][[:alpha:]]*)\b/\1\2 \3/g # Adding missing spaces after dot or comma
 s/((\.|,))[[:space:]]*$/\1/g # Deleting spaces at the end of line after dot or comma
@@ -76,6 +101,8 @@ EOF
 		done <<'EOF'
 \def\etal.{et\penalty50\ al.}
 \def\eg.{e.g.,}
+\def\ie.{i.e.,}
+\def\wrt.{w.r.t.}
 EOF
 
 		(
@@ -117,14 +144,6 @@ applyfixes | tee $TMP.0.msg
 	echo
 	cat $TMP.0.msg
 ) >$TMP.msg
-
-if ! git diff --exit-code $MAIN.tex >/dev/null
-then
-	echo "WARNING: There are un-commited changes in $MAIN.tex"
-	COMMIT=false
-else
-	COMMIT=true
-fi
 
 if ! diff $TMP.tex $MAIN.tex >/dev/null
 then
