@@ -112,10 +112,10 @@ EOF
 
 applyfixes | tee $TMP.0.msg
 
-)
+(
 	echo "Corrections done with autofix script"
 	echo
-	cat $TMP.msg
+	cat $TMP.0.msg
 ) >$TMP.msg
 
 if ! git diff --exit-code $MAIN.tex >/dev/null
