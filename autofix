@@ -42,14 +42,24 @@ TMP=tmp000
 
 set -e
 
-if ! git diff --exit-code $MAIN.tex >/dev/null
-then
-	echo "WARNING: There are un-commited changes in $MAIN.tex"
-	COMMIT=false
+if git rev-parse --git-dir > /dev/null 2>&1; then
+	INGIT=true
 else
-	COMMIT=true
+	INGIT=false
 fi
 
+if $INGIT
+then
+	if ! git diff --exit-code $MAIN.tex >/dev/null
+	then
+		echo "WARNING: There are un-commited changes in $MAIN.tex"
+		COMMIT=false
+	else
+		COMMIT=true
+	fi
+else
+	COMMIT=false
+fi
 
 if $SPACE
 then
@@ -126,7 +136,7 @@ EOF
 	fi
 
 	echo -n >$TMP.acr.tex
-	grep "\\newacronym" $GLOSS | while read -r line; do
+	grep "\\newacronym" $GLOSS.tex | while read -r line; do
 		COM=$(echo "$line" | sed -nE 's/^.*\\newacronym\{([^\}]*)\}.*/\1/p')
 		ACR=$(echo "$line" | sed -nE 's/^.*\\newacronym\{[^\}]*\}\{([^\}]*)\}.*/\1/p')
 		test -z "$COM" && continue
@@ -158,10 +168,9 @@ applyfixes | tee $TMP.0.msg
 if ! diff $TMP.tex $MAIN.tex >/dev/null
 then
 	meld $TMP.tex $MAIN.tex
-	if ! git diff --exit-code $MAIN.tex >/dev/null
+	if $COMMIT
 	then
-		echo "Some changes wrt to the git version ..."
-		if $COMMIT
+		if ! git diff --exit-code $MAIN.tex >/dev/null
 		then
 			read -r -n 1 -p "Commit (y/n)? " choice
 			echo
