@@ -28,6 +28,7 @@
 			s/^\(.*\)%C%\(.*\)%B%\(.*\)%A%\(.*\)$/\\new\3{ \1 }{\4}{\n  \2\n}\n/ # - make call to \fig{label}{body}{caption}
 			s/[[:space:]]*\n/\n/g # - deleting empty lines
 			w.autofix.tmp
+			d
 			b # break
 		}
 		b1 # go to 1

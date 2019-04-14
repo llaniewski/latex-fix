@@ -59,21 +59,30 @@ done
 function applysed {
 	FILE="$1"
 	shift
-	TOT="$(echo "$@")"
-	test -z "$TOT" && return 0
-	HA=$(echo "$TOT" | sed -E 's/^.* # //')
+	MSG="$1"
+	shift
 	if sed "$@" $FILE >$FILE.tmp
 	then
 		if ! diff $FILE.tmp $FILE >/dev/null
 		then
-			echo "$FILE: fix: $HA"
-			echo "fix: $HA" >>$FILE.msg
+			echo "$FILE: fix: $MSG"
+			echo "fix: $MSG" >>$FILE.msg
 			mv  $FILE.tmp $FILE
 		fi
 	else
-		echo "failed: sed $TOT $FILE"
+		echo "failed: $MSG"
+		echo "------: sed" "$@" "$FILE"
 		exit 1
 	fi
+}
+
+function applysedoneliner {
+	FILE="$1"
+	shift
+	TOT="$(echo "$@")"
+	test -z "$TOT" && return 0
+	HA=$(echo "$TOT" | sed -E 's/^.* # //')
+	applysed "$FILE" "$HA" "$@"
 }
 
 function applysimplefixes {
@@ -86,7 +95,7 @@ function applysimplefixes {
 	while read -r line
 	do
 		echo "$line" | grep '^#' >/dev/null && continue  # if commented exit
-		applysed $FILE -E "/^[[:space:]]*%/! $line"
+		applysedoneliner $FILE -E "/^[[:space:]]*%/! $line"
 	done <<'EOF'
 s/([[:space:]~(])e(|\.)(| )g(|\.)(|,|:)/\1\\eg./g # Change 'e.g.' to \eg.
 s/([[:space:]~(])i(|\.)(| )e(|\.)(|,|:)/\1\\ie./g # Change 'i.e.' to \ie.
@@ -153,9 +162,9 @@ function applyacronyms {
 		 echo "no file in applysimplefixes" >&2
 		 exit 2
 	fi
-	sed 's|\(.*\) %%% \(.*\)|s/\\([^{]\\)\2\\b/\\1\\gls{\1}/g # Fixing acronym \2|' $TMP.acr.def |
+	sed 's|\(.*\) %%% \(.*\)|s/\\([^{]\\)\2\\b/\\1\\\\gls{\1}/g # Fixing acronym \2|' $TMP.acr.def |
 	while read -r line; do
-		applysed "$FILE" "$line"
+		applysedoneliner "$FILE" "$line"
 	done
 }
 
@@ -215,7 +224,7 @@ done
 echo -n >.autofix.allfigs
 for i in "$@"
 do
-	applysed "$TMP.$i" -f $PP/figs.tex
+	applysed "$TMP.$i" "Moving floats out to another file" -f $PP/figs.sed
 	cat .autofix.tmp >>.autofix.allfigs
 done
 
