@@ -55,6 +55,9 @@ do
 	cp "$i" "$TMP.$i"
 	echo -n >"$TMP.$i.msg"
 done
+echo -n >"$TMP.msg"
+echo "Corrections done with autofix script" >>"$TMP.msg"
+echo >>"$TMP.msg"
 
 function applysed {
 	FILE="$1"
@@ -197,6 +200,7 @@ function printmissingacr {
 	if ! test -z "$ACRS"
 	then
 		echo "warning: Consider adding these acronyms: $ACRS"
+		echo "warning: Consider adding these acronyms: $ACRS" >>$TMP.msg
 	fi
 }
 
@@ -221,40 +225,45 @@ do
 	applyacronyms "$TMP.$i"
 done
 
-echo -n >.autofix.allfigs
+if $FIGURES
+then
+	echo -n >.autofix.allfigs
+	for i in "$@"
+	do
+		applysed "$TMP.$i" "Moving floats out to another file" -f $PP/figs.sed
+		cat .autofix.tmp >>.autofix.allfigs
+	done
+fi
+
+GITFILES=""
 for i in "$@"
 do
-	applysed "$TMP.$i" "Moving floats out to another file" -f $PP/figs.sed
-	cat .autofix.tmp >>.autofix.allfigs
-done
+	echo "File: $i" >>"$TMP.msg"
+	cat "$TMP.$i.msg" >>"$TMP.msg"
+	echo >>"$TMP.msg"
 
-exit 2;
-
-applyfixes | tee $TMP.0.msg
-
-(
-	echo "Corrections done with autofix script"
-	echo
-	cat $TMP.0.msg
-) >$TMP.msg
-
-if ! diff $TMP.tex $MAIN.tex >/dev/null
-then
-	meld $TMP.tex $MAIN.tex
-	if $COMMIT
+	if ! diff $i $TMP.$i >/dev/null
 	then
-		if ! git diff --exit-code $MAIN.tex >/dev/null
+		meld $TMP.$i $i
+		if $COMMIT
 		then
-			read -r -n 1 -p "Commit (y/n)? " choice
-			echo
-			case "$choice" in
-			y|Y )
-				git add $MAIN.tex
-				git commit -eF $TMP.msg
-				;;
-			esac
+			if ! git diff --exit-code $i >/dev/null
+			then
+				GITFILES="$GITFILES $i"
+			fi
 		fi
 	fi
-else
-	echo "Nothing was changed"
+done
+
+if ! test -z "$GITFILES"
+then
+	read -r -n 1 -p "Commit (y/n)? " choice
+	echo
+	case "$choice" in
+	y|Y )
+		git add $MAIN.tex
+		git commit -eF $TMP.msg
+		;;
+	esac
+	fi
 fi
