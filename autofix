@@ -2,6 +2,7 @@
 
 set -euo pipefail
 TMP=".autofix"
+PP=$(dirname $0)
 
 function usage {
 	echo "autofix filename.tex [glossary.tex]"
@@ -156,14 +157,31 @@ function applyacronyms {
 	done
 }
 
+function getintextacr {
+	FILE="$1"
+	if ! test -f "$FILE"
+	then
+		 echo "no file in applysimplefixes" >&2
+		 exit 2
+	fi
+	sed -n -f $PP/acr.sed $FILE >>$TMP.acr.intext
+}
+
+function makeuniq {
+	FILE="$1"
+	if ! test -f "$FILE"
+	then
+		 echo "no file in applysimplefixes" >&2
+		 exit 2
+	fi
+	cat $FILE | sort | uniq >$FILE.uniq
+	mv $FILE.uniq $FILE
+}	
+
 function printmissingacr {
-	sed -e 's/\\gls{[^}]*}//g' -e '/\\newacronym/d' $TMP.tex |
-		grep -o '\b[[:upper:]][[:upper:]][[:upper:]]*\b' |
-		sort | uniq >$TMP.acr.cur
-	sort $TMP.acr.tex >$TMP.acr.def
 	ACRS=$(
-		comm $TMP.acr.cur $TMP.acr.def -23 |
-		paste -sd ',' -
+		comm $TMP.acr.def.uniq $TMP.acr.intext.uniq -13 |
+		sed -e '{:1 N; s/\n/, /; b1}'
 	)
 	if ! test -z "$ACRS"
 	then
@@ -177,10 +195,15 @@ do
 done
 
 echo -n >$TMP.acr.def
+echo -n >$TMP.acr.intext
 for i in "$@"
 do
 	getacronyms "$TMP.$i"
+	getintextacr "$TMP.$i"
 done
+cat $TMP.acr.def | sed -e 's/^.*%%% //' | sort | uniq >$TMP.acr.def.uniq
+cat $TMP.acr.intext | sort | uniq >$TMP.acr.intext.uniq
+printmissingacr
 
 for i in "$@"
 do
