@@ -10,11 +10,13 @@ function usage {
 
 SPACE=false
 ACCEPT=false
+FIGURES=false
 while true
 do
 	case "$1" in
 	-s)	SPACE=true ;;
 	-a)	ACCEPT=true ;;
+	-f)	FIGURES=true ;;
 	-*)	echo "Unknown option" >&2
 		usage
 		exit 2 ;;
@@ -208,6 +210,13 @@ printmissingacr
 for i in "$@"
 do
 	applyacronyms "$TMP.$i"
+done
+
+echo -n >.autofix.allfigs
+for i in "$@"
+do
+	applysed "$TMP.$i" -f $PP/figs.tex
+	cat .autofix.tmp >>.autofix.allfigs
 done
 
 exit 2;
