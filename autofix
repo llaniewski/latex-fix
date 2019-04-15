@@ -10,13 +10,22 @@ function usage {
 
 SPACE=false
 ACCEPT=false
-FIGURES=false
+FLOATS=false
+FLOATSTEX="" # tex file with floats
 while true
 do
 	case "$1" in
 	-s)	SPACE=true ;;
 	-a)	ACCEPT=true ;;
-	-f)	FIGURES=true ;;
+	-f)	FLOATS=true
+		shift
+		FLOATSTEX="$1"
+		if ! touch "$FLOATSTEX"
+		then
+			echo "Cannot touch $FLOATSTEX" >&2
+			exit 3
+		fi
+		;;
 	-*)	echo "Unknown option" >&2
 		usage
 		exit 2 ;;
@@ -59,6 +68,18 @@ echo -n >"$TMP.msg"
 echo "Corrections done with autofix script" >>"$TMP.msg"
 echo >>"$TMP.msg"
 
+if $FLOATS
+then
+	i=FLOATSTEX
+	if ! test -f "$i"
+	then
+		touch $i
+	fi
+	cp "$i" "$TMP.$i.backup"
+	cp "$i" "$TMP.$i"
+	echo -n >"$TMP.$i.msg"
+fi
+
 function applysed {
 	FILE="$1"
 	shift
@@ -69,7 +90,7 @@ function applysed {
 		if ! diff $FILE.tmp $FILE >/dev/null
 		then
 			echo "$FILE: fix: $MSG"
-			echo "fix: $MSG" >>$FILE.msg
+			echo "     $MSG" >>$FILE.msg
 			mv  $FILE.tmp $FILE
 		fi
 	else
@@ -165,7 +186,7 @@ function applyacronyms {
 		 echo "no file in applysimplefixes" >&2
 		 exit 2
 	fi
-	sed 's|\(.*\) %%% \(.*\)|s/\\([^{]\\)\2\\b/\\1\\\\gls{\1}/g # Fixing acronym \2|' $TMP.acr.def |
+	sed 's|\(.*\) %%% \(.*\)|s/\\([[:space:](),.;]\\)\2\\([[:space:](),.;]\\)/\\1\\\\gls{\1}\\2/g # Fixing acronym \2|' $TMP.acr.def |
 	while read -r line; do
 		applysedoneliner "$FILE" "$line"
 	done
@@ -225,22 +246,34 @@ do
 	applyacronyms "$TMP.$i"
 done
 
-if $FIGURES
+if $FLOATS
 then
 	echo -n >.autofix.allfigs
 	for i in "$@"
 	do
 		applysed "$TMP.$i" "Moving floats out to another file" -f $PP/figs.sed
-		cat .autofix.tmp >>.autofix.allfigs
+		if test -s .autofix.tmp # check if empty
+		then
+			echo "     Adding floats from $i" >>$TMP.$FLOATSTEX.msg			
+			cat .autofix.tmp >>$TMP.$FLOATSTEX
+		fi
 	done
 fi
 
 GITFILES=""
-for i in "$@"
+FLOATSCHECK=false
+for i in "$@" "$FLOATSTEX"
 do
+	test -z "$i" && continue
+	if test "$i" == "$FLOATSTEX"
+	then
+		$FLOATSCHECK && continue
+		FLOATSCHECK=true
+	fi
+		
+	echo >>"$TMP.msg"
 	echo "File: $i" >>"$TMP.msg"
 	cat "$TMP.$i.msg" >>"$TMP.msg"
-	echo >>"$TMP.msg"
 
 	if ! diff $i $TMP.$i >/dev/null
 	then
@@ -265,5 +298,4 @@ then
 		git commit -eF $TMP.msg
 		;;
 	esac
-	fi
 fi
