@@ -5,7 +5,7 @@ TMP=".autofix"
 PP=$(dirname $0)
 
 function usage {
-	echo "autofix filename.tex [glossary.tex]"
+	echo "autofix [-s] [-a] [-f floats.tex] file.tex ..."
 }
 
 SPACE=false
