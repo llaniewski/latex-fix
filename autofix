@@ -90,7 +90,7 @@ function applysed {
 		if ! diff $FILE.tmp $FILE >/dev/null
 		then
 			echo "$FILE: fix: $MSG"
-			echo "     $MSG" >>$FILE.msg
+			echo "- $MSG" >>$FILE.msg
 			mv  $FILE.tmp $FILE
 		fi
 	else
@@ -188,7 +188,7 @@ function applyacronyms {
 	fi
 	sed 's|\(.*\) %%% \(.*\)|s/\\([[:space:](),.;]\\)\2\\([[:space:](),.;]\\)/\\1\\\\gls{\1}\\2/g # Fixing acronym \2|' $TMP.acr.def |
 	while read -r line; do
-		applysedoneliner "$FILE" "$line"
+		applysedoneliner "$FILE" "/^[[:space:]]*%/! $line"
 	done
 }
 
@@ -221,7 +221,7 @@ function printmissingacr {
 	if ! test -z "$ACRS"
 	then
 		echo "warning: Consider adding these acronyms: $ACRS"
-		echo "warning: Consider adding these acronyms: $ACRS" >>$TMP.msg
+		echo "**Warning:** Consider adding these acronyms: $ACRS" >>$TMP.msg
 	fi
 }
 
@@ -254,7 +254,7 @@ then
 		applysed "$TMP.$i" "Moving floats out to another file" -f $PP/figs.sed
 		if test -s .autofix.tmp # check if empty
 		then
-			echo "     Adding floats from $i" >>$TMP.$FLOATSTEX.msg			
+			echo "- Adding floats from $i" >>$TMP.$FLOATSTEX.msg			
 			cat .autofix.tmp >>$TMP.$FLOATSTEX
 		fi
 	done
@@ -270,21 +270,29 @@ do
 		$FLOATSCHECK && continue
 		FLOATSCHECK=true
 	fi
-		
-	echo >>"$TMP.msg"
-	echo "File: $i" >>"$TMP.msg"
-	cat "$TMP.$i.msg" >>"$TMP.msg"
 
 	if ! diff $i $TMP.$i >/dev/null
 	then
 		meld $TMP.$i $i
-		if $COMMIT
+		if ! diff $i $TMP.$i.backup >/dev/null
 		then
-			if ! git diff --exit-code $i >/dev/null
+			if $COMMIT
 			then
 				GITFILES="$GITFILES $i"
 			fi
-		fi
+			if ! diff $i $TMP.$i >/dev/null
+			then
+				echo "- Changes modified by user" >>"$TMP.$i.msg"
+			else
+				echo "- Changes accepted by user" >>"$TMP.$i.msg"
+			fi	
+		else
+			echo "- Changes completely discarted by user" >>"$TMP.$i.msg"
+		fi				
+
+		echo >>"$TMP.msg"
+		echo "File: $i" >>"$TMP.msg"
+		cat "$TMP.$i.msg" >>"$TMP.msg"
 	fi
 done
 
