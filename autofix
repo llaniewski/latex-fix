@@ -1,46 +1,38 @@
 #!/bin/bash
 
+set -euo pipefail
+TMP=".autofix"
+PP=$(dirname $0)
+
 function usage {
-	echo "autofix filename.tex [glossary.tex]"
+	echo "autofix [-s] [-a] [-f floats.tex] file.tex ..."
 }
 
-if test "x$1" == "xspace"
-then
-	SPACE=true
+SPACE=false
+ACCEPT=false
+FLOATS=false
+FLOATSTEX="" # tex file with floats
+while true
+do
+	case "$1" in
+	-s)	SPACE=true ;;
+	-a)	ACCEPT=true ;;
+	-f)	FLOATS=true
+		shift
+		FLOATSTEX="$1"
+		if ! touch "$FLOATSTEX"
+		then
+			echo "Cannot touch $FLOATSTEX" >&2
+			exit 3
+		fi
+		;;
+	-*)	echo "Unknown option" >&2
+		usage
+		exit 2 ;;
+	*) break ;;
+	esac
 	shift
-else
-	SPACE=false
-fi
-
-MAIN=$1
-if test -z "$MAIN"
-then
-	usage
-	exit 1
-else
-	shift
-fi
-
-MAIN=$(echo "$MAIN" | sed 's/\.tex$//')
-
-if ! test -f "$MAIN.tex"
-then
-	usage
-	exit 2
-fi
-
-GLOSS=$1
-if test -z "$GLOSS"
-then
-	GLOSS=$MAIN
-else
-	shift
-fi
-
-
-TMP=tmp000
-
-set -e
+done
 
 if git rev-parse --git-dir > /dev/null 2>&1; then
 	INGIT=true
@@ -50,48 +42,84 @@ fi
 
 if $INGIT
 then
-	if ! git diff --exit-code $MAIN.tex >/dev/null
-	then
-		echo "WARNING: There are un-commited changes in $MAIN.tex"
-		COMMIT=false
-	else
-		COMMIT=true
-	fi
+	COMMIT=true
 else
 	COMMIT=false
 fi
 
-if $SPACE
+for i in "$@"
+do
+	if ! test -f "$i"
+	then
+		echo "$i: file not found"
+		usage
+		exit 2
+	fi
+	if $COMMIT && ! git diff --exit-code $i >/dev/null
+	then
+		echo "WARNING: There are un-commited changes in $i (I won't propose to commit)"
+		COMMIT=false
+	fi
+	cp "$i" "$TMP.$i.backup"
+	cp "$i" "$TMP.$i"
+	echo -n >"$TMP.$i.msg"
+done
+echo -n >"$TMP.msg"
+echo "Corrections done with autofix script" >>"$TMP.msg"
+echo >>"$TMP.msg"
+
+if $FLOATS
 then
-	sed -E 's/((\.|,))[[:space:]]*$/\1/g' $MAIN.tex >$TMP.tex
-	mv $TMP.tex $MAIN.tex
+	i=FLOATSTEX
+	if ! test -f "$i"
+	then
+		touch $i
+	fi
+	cp "$i" "$TMP.$i.backup"
+	cp "$i" "$TMP.$i"
+	echo -n >"$TMP.$i.msg"
 fi
 
-cp $MAIN.tex $TMP.tex
-
 function applysed {
-	line="$1"
-	test -z "$line" && return 0
-	echo "$line" | grep '^#' >/dev/null && return 0
-	HA=$(echo "$line" | sed -E 's/^.* # //')
-	if sed -E "/^[[:space:]]*%/! $line" $TMP.tex >$TMP.1.tex
+	FILE="$1"
+	shift
+	MSG="$1"
+	shift
+	if sed "$@" $FILE >$FILE.tmp
 	then
-		if ! diff $TMP.1.tex $TMP.tex >/dev/null
+		if ! diff $FILE.tmp $FILE >/dev/null
 		then
-			echo "fix: $HA"
-			mv $TMP.1.tex $TMP.tex
+			echo "$FILE: fix: $MSG"
+			echo "- $MSG" >>$FILE.msg
+			mv  $FILE.tmp $FILE
 		fi
 	else
-		echo "sed failed for: $line"
+		echo "failed: $MSG"
+		echo "------: sed" "$@" "$FILE"
 		exit 1
 	fi
 }
 
-function applyfixes {
+function applysedoneliner {
+	FILE="$1"
+	shift
+	TOT="$(echo "$@")"
+	test -z "$TOT" && return 0
+	HA=$(echo "$TOT" | sed -E 's/^.* # //')
+	applysed "$FILE" "$HA" "$@"
+}
 
+function applysimplefixes {
+	FILE="$1"
+	if ! test -f "$FILE"
+	then
+		 echo "no file in applysimplefixes" >&2
+		 exit 2
+	fi
 	while read -r line
 	do
-		applysed "$line"
+		echo "$line" | grep '^#' >/dev/null && continue  # if commented exit
+		applysedoneliner $FILE -E "/^[[:space:]]*%/! $line"
 	done <<'EOF'
 s/([[:space:]~(])e(|\.)(| )g(|\.)(|,|:)/\1\\eg./g # Change 'e.g.' to \eg.
 s/([[:space:]~(])i(|\.)(| )e(|\.)(|,|:)/\1\\ie./g # Change 'i.e.' to \ie.
@@ -100,12 +128,14 @@ s/[[:space:]~]et(\.|\. | )al(\.|)/~\\etal./g # Change 'et al' to \etal.
 s/([[:space:]][[:alpha:]]*)(\.|,)([[:alpha:]][[:alpha:]]*)\b/\1\2 \3/g # Adding missing spaces after dot or comma
 s/((\.|,))[[:space:]]*$/\1/g # Deleting spaces at the end of line after dot or comma
 s/\.[[:space:]][[:space:]]*([[:upper:]])/\.\n\1/g # Making all sentences in new lines
-s/([[:alpha:]])[[:space:]]*([\\](ref|cite|fig))/\1~\2/g # Adding non-bracking spaced before references
+s/([[:alpha:]])[[:space:]]*([\\](ref|cite|fig))/\1~\2/g # Adding non-bracking spaces before references
 s/(figure|Fig\.|fig\.)~(\\)/Figure~\2/g # Correcting capital letter on Figure
 s/(table|Tab\.|tab\.)~(\\)/Table~\2/g # Correcting capital letter on Table
 #s/([[:space:]])-([[:space:]])/\1---\2/g # Making dash a long dash
 EOF
+}
 
+function applydefs {
 	echo -n >$TMP.defs.tex
 	if grep '\\begin{document}' $TMP.tex >/dev/null
 	then
@@ -134,54 +164,146 @@ EOF
 	else
 		echo "warning: no begin{document} so I'm not adding any definitions"
 	fi
+}
 
-	echo -n >$TMP.acr.tex
-	grep "\\newacronym" $GLOSS.tex | while read -r line; do
-		COM=$(echo "$line" | sed -nE 's/^.*\\newacronym\{([^\}]*)\}.*/\1/p')
-		ACR=$(echo "$line" | sed -nE 's/^.*\\newacronym\{[^\}]*\}\{([^\}]*)\}.*/\1/p')
-		test -z "$COM" && continue
-		echo $ACR >>$TMP.acr.tex
-		applysed 's/([[:space:]+])'$ACR'([^}])/\1\\gls{'$COM'}\2/g # fixing acronym '$ACR''
-		applysed 's/^'$ACR'([^}])/\\gls{'$COM'}\1/g # fixing acronym '$ACR''
+
+
+function getacronyms {
+	FILE="$1"
+	if ! test -f "$FILE"
+	then
+		 echo "no file in applysimplefixes" >&2
+		 exit 2
+	fi
+	echo "get acronyms from $FILE"
+	sed -n -e 's/^.*\\newacronym{\([^}]*\)}{\([^}]*\)}.*$/\1 %%% \2/p' "$FILE" >>$TMP.acr.def
+}
+
+function applyacronyms {
+	FILE="$1"
+	if ! test -f "$FILE"
+	then
+		 echo "no file in applysimplefixes" >&2
+		 exit 2
+	fi
+	sed 's|\(.*\) %%% \(.*\)|s/\\([[:space:](),.;]\\)\2\\([[:space:](),.;]\\)/\\1\\\\gls{\1}\\2/g # Fixing acronym \2|' $TMP.acr.def |
+	while read -r line; do
+		applysedoneliner "$FILE" "/^[[:space:]]*%/! $line"
 	done
+}
 
-	ACRS=$(sed -e 's/\\gls{[^}]*}//g' -e '/\\newacronym/d' $TMP.tex |
-		grep -o '\b[[:upper:]][[:upper:]][[:upper:]]*\b' |
-		sort | uniq |
-		comm - <(sort $TMP.acr.tex) -23 |
-		paste -sd ',' -
+function getintextacr {
+	FILE="$1"
+	if ! test -f "$FILE"
+	then
+		 echo "no file in applysimplefixes" >&2
+		 exit 2
+	fi
+	sed -n -f $PP/acr.sed $FILE >>$TMP.acr.intext
+}
+
+function makeuniq {
+	FILE="$1"
+	if ! test -f "$FILE"
+	then
+		 echo "no file in applysimplefixes" >&2
+		 exit 2
+	fi
+	cat $FILE | sort | uniq >$FILE.uniq
+	mv $FILE.uniq $FILE
+}	
+
+function printmissingacr {
+	ACRS=$(
+		comm $TMP.acr.def.uniq $TMP.acr.intext.uniq -13 |
+		sed -e '{:1 N; s/\n/, /; b1}'
 	)
 	if ! test -z "$ACRS"
 	then
 		echo "warning: Consider adding these acronyms: $ACRS"
+		echo "**Warning:** Consider adding these acronyms: $ACRS" >>$TMP.msg
 	fi
 }
 
-applyfixes | tee $TMP.0.msg
+for i in "$@"
+do
+	applysimplefixes "$TMP.$i"
+done
 
-(
-	echo "Corrections done with autofix script"
-	echo
-	cat $TMP.0.msg
-) >$TMP.msg
+echo -n >$TMP.acr.def
+echo -n >$TMP.acr.intext
+for i in "$@"
+do
+	getacronyms "$TMP.$i"
+	getintextacr "$TMP.$i"
+done
+cat $TMP.acr.def | sed -e 's/^.*%%% //' | sort | uniq >$TMP.acr.def.uniq
+cat $TMP.acr.intext | sort | uniq >$TMP.acr.intext.uniq
+printmissingacr
 
-if ! diff $TMP.tex $MAIN.tex >/dev/null
+for i in "$@"
+do
+	applyacronyms "$TMP.$i"
+done
+
+if $FLOATS
 then
-	meld $TMP.tex $MAIN.tex
-	if $COMMIT
-	then
-		if ! git diff --exit-code $MAIN.tex >/dev/null
+	echo -n >.autofix.allfigs
+	for i in "$@"
+	do
+		applysed "$TMP.$i" "Moving floats out to another file" -f $PP/figs.sed
+		if test -s .autofix.tmp # check if empty
 		then
-			read -r -n 1 -p "Commit (y/n)? " choice
-			echo
-			case "$choice" in
-			y|Y )
-				git add $MAIN.tex
-				git commit -eF $TMP.msg
-				;;
-			esac
+			echo "- Adding floats from $i" >>$TMP.$FLOATSTEX.msg			
+			cat .autofix.tmp >>$TMP.$FLOATSTEX
 		fi
+	done
+fi
+
+GITFILES=""
+FLOATSCHECK=false
+for i in "$@" "$FLOATSTEX"
+do
+	test -z "$i" && continue
+	if test "$i" == "$FLOATSTEX"
+	then
+		$FLOATSCHECK && continue
+		FLOATSCHECK=true
 	fi
-else
-	echo "Nothing was changed"
+
+	if ! diff $i $TMP.$i >/dev/null
+	then
+		meld $TMP.$i $i
+		if ! diff $i $TMP.$i.backup >/dev/null
+		then
+			if $COMMIT
+			then
+				GITFILES="$GITFILES $i"
+			fi
+			if ! diff $i $TMP.$i >/dev/null
+			then
+				echo "- Changes modified by user" >>"$TMP.$i.msg"
+			else
+				echo "- Changes accepted by user" >>"$TMP.$i.msg"
+			fi	
+		else
+			echo "- Changes completely discarted by user" >>"$TMP.$i.msg"
+		fi				
+
+		echo >>"$TMP.msg"
+		echo "File: $i" >>"$TMP.msg"
+		cat "$TMP.$i.msg" >>"$TMP.msg"
+	fi
+done
+
+if ! test -z "$GITFILES"
+then
+	read -r -n 1 -p "Commit (y/n)? " choice
+	echo
+	case "$choice" in
+	y|Y )
+		git add $GITFILES
+		git commit -eF $TMP.msg
+		;;
+	esac
 fi

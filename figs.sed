@@ -13,12 +13,12 @@
 # -- ------
 #			s/\([^\\]\)%[^\n]*\n[[:space:]]*/\1 /
 #			s/[[:space:]]*\n[[:space:]]*/ /g
-			s/\([^\\]\)%[^\n]*/\1/ # - delete comments
+			s/\([^\\]\)%[^\n]*/\1/g # - delete comments
 			s/[[:space:]]*\n/\n/g # - delete empty lines  and end-line spaces
 #			s/[[:space:]][[:space:]]*/ /g
 #			s/^[[:space:]]*//
 #			s/[[:space:]]*$//
-			s/^.*\\begin{\(\(fig\)ure\|\(tab\)le\)}\(\[[^\]]*\]\|\)/\2\3%A%/ # - delete leading begin
+			s/^.*\\begin{\(\(fig\)ure\|\(tab\)le\)}\(\[[^]]*\]\|\)/\2\3%A%/ # - delete leading begin
 			s/\\end{\(figure\|table\)}.*$// # - delete trailing end
 			s/\\centering//g # - delete centering
 			s/\\\(begin\|end\){center}//g # - delete centering
@@ -27,7 +27,8 @@
 			s/^\(.*\)\\label{\([^{}]*\)}/\2%C%\1/ # - copy label
 			s/^\(.*\)%C%\(.*\)%B%\(.*\)%A%\(.*\)$/\\new\3{ \1 }{\4}{\n  \2\n}\n/ # - make call to \fig{label}{body}{caption}
 			s/[[:space:]]*\n/\n/g # - deleting empty lines
-			wfigs.tmp0
+			w.autofix.tmp
+			d
 			b # break
 		}
 		b1 # go to 1
